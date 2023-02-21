@@ -21,12 +21,25 @@
       }
   ],
 
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; default-src 'self'; connect-src https://edge-ai-models.s3.us-east-2.amazonaws.com https://huggingface.co; frame-src https://web-ai-demo.vercel.app",
+    "sandbox": "sandbox allow-scripts; script-src 'self' 'wasm-unsafe-eval'; default-src 'self'; connect-src https://edge-ai-models.s3.us-east-2.amazonaws.com https://huggingface.co; worker-src 'self' 'unsafe-eval' blob: data:"
+    
+  },
+
   "background": {
     "service_worker": "js/background.js"
   },
 
   "permissions": [
     "storage"
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["sandbox.html"],
+      "matches": ["<all_urls>"]
+    }
   ],
 
   "host_permissions": [
