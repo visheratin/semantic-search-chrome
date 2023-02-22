@@ -32,7 +32,8 @@
   },
 
   "permissions": [
-    "storage"
+    "storage",
+    "unlimitedStorage"
   ],
 
   "web_accessible_resources": [

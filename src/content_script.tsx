@@ -49,33 +49,56 @@ interface Elements {
   element: HTMLElement;
 }
 
-const elements: Elements[] = [];
+const pageElements: Elements[] = [];
 
 interface ElementText {
   id: string;
   text: string;
 }
 
-const extractElements = (): ElementText[] => {
-  const pElements = document.getElementsByTagName("p");
-  const pTexts = [] as ElementText[];
-  for (let i = 0; i < pElements.length; i++) {
-    const id = uuidv4();
-    elements.push({ id: id, element: pElements[i] });
-    if (pElements[i].innerText) {
-      pTexts.push({ id: id, text: pElements[i].innerText });
+const parseElements = (
+  startElements: HTMLCollection,
+  minTextLength: number
+): HTMLElement[] => {
+  const elements = [] as HTMLElement[];
+  for (let i = 0; i < startElements.length; i++) {
+    const element = startElements[i] as HTMLElement;
+    if (element.tagName === "SCRIPT" || element.tagName === "STYLE") {
+      continue;
+    }
+    if (element.innerText && element.innerText.length > minTextLength) {
+      const children = parseElements(element.children, minTextLength);
+      if (children.length > 0) {
+        elements.push(...children);
+      } else {
+        elements.push(element);
+      }
     }
   }
-  return pTexts;
+  return elements;
 };
 
-function scrollToTargetAdjusted(element: HTMLElement) {
+const extractElements = (): ElementText[] => {
+  const startElements = document.getElementsByTagName("body")[0].children;
+  const pElements = parseElements(startElements, 140);
+  const texts = [] as ElementText[];
+  for (let i = 0; i < pElements.length; i++) {
+    const id = uuidv4();
+    pageElements.push({ id: id, element: pElements[i] });
+    if (pElements[i].innerText) {
+      texts.push({ id: id, text: pElements[i].innerText });
+    }
+  }
+  return texts;
+};
+
+function scrollToTarget(element: HTMLElement) {
   var h =
     window.innerHeight ||
     document.documentElement.clientHeight ||
     document.body.clientHeight;
   var elementPosition = element.getBoundingClientRect().top;
-  var offsetPosition = elementPosition + window.scrollY - h / 2;
+  var offsetPosition = elementPosition + window.scrollY - h / 2 + 50;
 
   window.scrollTo({
     top: offsetPosition,
@@ -89,11 +112,9 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     sendResponse(elements);
   }
   if (msg.command === "focusElement") {
-    const element = elements.find((e) => e.id === msg.value);
+    const element = pageElements.find((e) => e.id === msg.value);
     if (element) {
-      scrollToTargetAdjusted(element.element);
-      // element.element.scrollIntoView({ block: "start", behavior: "smooth" });
-      // element.element.focus();
+      scrollToTarget(element.element);
     }
   }
 });

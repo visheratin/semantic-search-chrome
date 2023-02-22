@@ -1,46 +1,105 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import ReactDOM from "react-dom";
 import { TextModel, TextFeatureExtractionModel } from "@visheratin/web-ai";
+import md5 from "md5";
 
 export interface ElementOutput {
   id: string;
+  hash: string;
   text: string;
   similarity: number;
 }
 
 const Sandbox = () => {
+  let cache = {} as { [key: string]: number[] };
+
   useEffect(() => {
     loadModel();
+    loadFromStorage();
   }, []);
+
+  const loadFromStorage = async () => {
+    const dataItems = await chrome.storage.local.get("cache");
+    const rawData = dataItems["cache"];
+    if (rawData) {
+      cache = JSON.parse(rawData);
+    }
+  };
+
+  const saveToStorage = async () => {
+    await chrome.storage.local.set({ cache: JSON.stringify(cache) });
+  };
+
+  const splitText = (text: string, length: number) => {
+    const textParts = text.replace(/([.?!])\s*(?=[A-Z])/g, "$1|").split("|");
+    let result = [] as string[];
+    let current = "";
+    for (let i = 0; i < textParts.length; i++) {
+      current += " ";
+      current += textParts[i];
+      if (current.length > length) {
+        result.push(current.trim());
+        current = "";
+      }
+    }
+    if (current.length > 0) {
+      result.push(current);
+    }
+    return result;
+  };
+
+  const splitElements = (elements: ElementText[]) => {
+    let result = [] as ElementText[];
+    for (let i = 0; i < elements.length; i++) {
+      if (!elements[i] || !elements[i].text) {
+        continue;
+      }
+      const textParts = splitText(elements[i].text, 280);
+      for (let j = 0; j < textParts.length; j++) {
+        result.push({ id: elements[i].id, text: textParts[j] });
+      }
+    }
+    return result;
+  };
 
   const processSearch = async (
     m: TextFeatureExtractionModel,
     message: string,
     elements: ElementText[]
   ) => {
-    if (!elements) {
+    if (!elements || elements.length === 0) {
       return;
     }
     window.parent.postMessage(
-      { command: "status", message: "searching", busy: true },
+      { command: "status", message: "searching", busy: true, progress: 0.0 },
       "*"
     );
-    const mRes = await m.process(message);
+    const searchElements = splitElements(elements);
+    const messageOutput = await m.process(message);
     let result = [] as ElementOutput[];
-    for (let i = 0; i < elements.length; i++) {
-      if (!elements[i] || !elements[i].text) {
-        continue;
+    for (let i = 0; i < searchElements.length; i++) {
+      let sim = 0;
+      const text = searchElements[i].text;
+      const hash = md5(text);
+      if (cache[hash]) {
+        sim = cosineSim(messageOutput.result, cache[hash]);
+      } else {
+        const eRes = await m.process(text);
+        cache[hash] = eRes.result;
+        sim = cosineSim(messageOutput.result, eRes.result);
+        saveToStorage();
       }
-      const eRes = await m.process(elements[i].text);
-      const sim = cosineSim(mRes.result, eRes.result);
+      sim = Math.round(sim * 100) / 100;
       const elem = {
-        id: elements[i].id,
-        text: elements[i].text,
+        id: searchElements[i].id,
+        hash: hash,
+        text: text,
         similarity: sim,
       };
       if (sim > 0.6) {
         result.push(elem);
         result.sort((a, b) => b.similarity - a.similarity);
+        result = result.slice(0, 7);
         window.parent.postMessage(
           {
             command: "result",
@@ -49,10 +108,21 @@ const Sandbox = () => {
           "*"
         );
       }
+      if (i % 10 === 0) {
+        window.parent.postMessage(
+          {
+            command: "status",
+            message: "searching",
+            busy: true,
+            progress: Math.round((i / searchElements.length) * 100.0),
+          },
+          "*"
+        );
+      }
     }
 
     window.parent.postMessage(
-      { command: "status", message: "ready", busy: false },
+      { command: "status", message: "finished", busy: false, progress: 100.0 },
       "*"
     );
   };
